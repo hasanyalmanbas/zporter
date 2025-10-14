@@ -27,71 +27,146 @@ async fn list_ports(ports: Vec<u16>, only_listening: bool) -> Result<Vec<PortInf
     let mut results = Vec::new();
 
     for &port in &ports {
-        // Use lsof to find processes using the port
-        let output = Command::new("lsof")
-            .args(&["-i", &format!(":{}", port), "-P", "-n"])
-            .output();
+        // Cross-platform port listing
+        #[cfg(target_os = "windows")]
+        {
+            // Use netstat on Windows
+            let output = Command::new("netstat")
+                .args(&["-ano"])
+                .output();
 
-        match output {
-            Ok(output) => {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let lines: Vec<&str> = stdout.lines().collect();
+            match output {
+                Ok(output) => {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let lines: Vec<&str> = stdout.lines().collect();
 
-                    // Skip header line
-                    for line in lines.iter().skip(1) {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 9 {
-                            let _command = parts[0];
-                            let pid_str = parts[1];
-                            let user = parts[2];
+                        // Skip header lines
+                        for line in lines.iter().skip(4) {
+                            let parts: Vec<&str> = line.split_whitespace().collect();
+                            if parts.len() >= 5 {
+                                // Parse local address for port
+                                if let Some(local_addr) = parts.get(1) {
+                                    if let Some(port_part) = local_addr.split(':').last() {
+                                        if let Ok(parsed_port) = port_part.parse::<u16>() {
+                                            if parsed_port == port {
+                                                let pid_str = parts[4];
+                                                if let Ok(pid) = pid_str.parse::<u32>() {
+                                                    // Get process info using sysinfo
+                                                    let mut system = System::new();
+                                                    system.refresh_processes(ProcessesToUpdate::All, true);
 
-                            // Parse PID
-                            if let Ok(pid) = pid_str.parse::<u32>() {
-                                // Get process info using sysinfo
-                                let mut system = System::new();
-                                system.refresh_processes(ProcessesToUpdate::All, true);
+                                                    let (process_name, exe_path) = if let Some(process) = system.process(Pid::from(pid as usize)) {
+                                                        (process.name().to_string_lossy().to_string(),
+                                                         process.exe().map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string()))
+                                                    } else {
+                                                        ("unknown".to_string(), "".to_string())
+                                                    };
 
-                                let (process_name, exe_path) = if let Some(process) = system.process(Pid::from(pid as usize)) {
-                                    (process.name().to_string_lossy().to_string(),
-                                     process.exe().map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string()))
-                                } else {
-                                    ("unknown".to_string(), "".to_string())
-                                };
+                                                    // Detect source
+                                                    let source = detect_source_sync(pid);
 
-                                // Detect source
-                                let source = detect_source_sync(pid);
+                                                    // Check if listening (TCP LISTENING state)
+                                                    let state = parts.get(3).unwrap_or("");
+                                                    let is_listening = state.contains("LISTENING");
+                                                    let protocol = if local_addr.contains("TCP") { "tcp" } else { "udp" };
 
-                                // Parse connection info from the name field
-                                let name = parts[8..].join(" ");
-                                let (protocol, is_listening) = if name.contains("(LISTEN)") {
-                                    ("tcp".to_string(), true)
-                                } else if name.contains("UDP") {
-                                    ("udp".to_string(), false)
-                                } else {
-                                    ("tcp".to_string(), false)
-                                };
-
-                                // Only include listening sockets if requested
-                                if !only_listening || is_listening {
-                                    results.push(PortInfo {
-                                        port,
-                                        protocol,
-                                        pid,
-                                        process_name,
-                                        exe_path,
-                                        user: user.to_string(),
-                                        source,
-                                        remarks: if is_listening { "LISTENING".to_string() } else { "CONNECTED".to_string() },
-                                    });
+                                                    // Only include listening sockets if requested
+                                                    if !only_listening || is_listening {
+                                                        results.push(PortInfo {
+                                                            port,
+                                                            protocol: protocol.to_string(),
+                                                            pid,
+                                                            process_name,
+                                                            exe_path,
+                                                            user: "system".to_string(), // Windows doesn't show user easily
+                                                            source,
+                                                            remarks: state.to_string(),
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                Err(e) => {
+                    eprintln!("Failed to run netstat: {}", e);
+                }
             }
-            Err(e) => {
-                eprintln!("Failed to run lsof: {}", e);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Use lsof on Unix-like systems (macOS, Linux)
+            let output = Command::new("lsof")
+                .args(&["-i", &format!(":{}", port), "-P", "-n"])
+                .output();
+
+            match output {
+                Ok(output) => {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let lines: Vec<&str> = stdout.lines().collect();
+
+                        // Skip header line
+                        for line in lines.iter().skip(1) {
+                            let parts: Vec<&str> = line.split_whitespace().collect();
+                            if parts.len() >= 9 {
+                                let _command = parts[0];
+                                let pid_str = parts[1];
+                                let user = parts[2];
+
+                                // Parse PID
+                                if let Ok(pid) = pid_str.parse::<u32>() {
+                                    // Get process info using sysinfo
+                                    let mut system = System::new();
+                                    system.refresh_processes(ProcessesToUpdate::All, true);
+
+                                    let (process_name, exe_path) = if let Some(process) = system.process(Pid::from(pid as usize)) {
+                                        (process.name().to_string_lossy().to_string(),
+                                         process.exe().map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string()))
+                                    } else {
+                                        ("unknown".to_string(), "".to_string())
+                                    };
+
+                                    // Detect source
+                                    let source = detect_source_sync(pid);
+
+                                    // Parse connection info from the name field
+                                    let name = parts[8..].join(" ");
+                                    let (protocol, is_listening) = if name.contains("(LISTEN)") {
+                                        ("tcp".to_string(), true)
+                                    } else if name.contains("UDP") {
+                                        ("udp".to_string(), false)
+                                    } else {
+                                        ("tcp".to_string(), false)
+                                    };
+
+                                    // Only include listening sockets if requested
+                                    if !only_listening || is_listening {
+                                        results.push(PortInfo {
+                                            port,
+                                            protocol,
+                                            pid,
+                                            process_name,
+                                            exe_path,
+                                            user: user.to_string(),
+                                            source,
+                                            remarks: if is_listening { "LISTENING".to_string() } else { "CONNECTED".to_string() },
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to run lsof: {}", e);
+                }
             }
         }
     }
@@ -178,80 +253,148 @@ async fn list_all_ports() -> Result<Vec<PortInfo>, String> {
 
     let mut results = Vec::new();
 
-    // Use lsof to find all network connections
-    let output = Command::new("lsof")
-        .args(&["-i", "-P", "-n"])
-        .output();
+    #[cfg(target_os = "windows")]
+    {
+        // Use netstat on Windows
+        let output = Command::new("netstat")
+            .args(&["-ano"])
+            .output();
 
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let lines: Vec<&str> = stdout.lines().collect();
+        match output {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let lines: Vec<&str> = stdout.lines().collect();
 
-                // Skip header line
-                for line in lines.iter().skip(1) {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 9 {
-                        let _command = parts[0];
-                        let pid_str = parts[1];
-                        let user = parts[2];
+                    // Skip header lines
+                    for line in lines.iter().skip(4) {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 5 {
+                            // Parse local address for port
+                            if let Some(local_addr) = parts.get(1) {
+                                if let Some(port_part) = local_addr.split(':').last() {
+                                    if let Ok(port) = port_part.parse::<u16>() {
+                                        let pid_str = parts[4];
+                                        if let Ok(pid) = pid_str.parse::<u32>() {
+                                            // Get process info using sysinfo
+                                            let mut system = System::new();
+                                            system.refresh_processes(ProcessesToUpdate::All, true);
 
-                        // Parse PID
-                        if let Ok(pid) = pid_str.parse::<u32>() {
-                            // Get process info using sysinfo
-                            let mut system = System::new();
-                            system.refresh_processes(ProcessesToUpdate::All, true);
+                                            let (process_name, exe_path) = if let Some(process) = system.process(Pid::from(pid as usize)) {
+                                                (process.name().to_string_lossy().to_string(),
+                                                 process.exe().map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string()))
+                                            } else {
+                                                ("unknown".to_string(), "".to_string())
+                                            };
 
-                            let (process_name, exe_path) = if let Some(process) = system.process(Pid::from(pid as usize)) {
-                                (process.name().to_string_lossy().to_string(),
-                                 process.exe().map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string()))
-                            } else {
-                                ("unknown".to_string(), "".to_string())
-                            };
+                                            // Detect source
+                                            let source = detect_source_sync(pid);
 
-                            // Detect source
-                            let source = detect_source_sync(pid);
+                                            // Check if listening (TCP LISTENING state)
+                                            let state = parts.get(3).unwrap_or("");
+                                            let protocol = if local_addr.contains("TCP") { "tcp" } else { "udp" };
 
-                            // Parse connection info from the name field
-                            let name = parts[8..].join(" ");
-                            let (protocol, port_str) = if let Some(port_part) = name.split(':').last() {
-                                if let Some(port_num) = port_part.split(' ').next() {
-                                    if let Ok(port) = port_num.parse::<u16>() {
-                                        if name.contains("(LISTEN)") {
-                                            ("tcp".to_string(), port)
-                                        } else if name.contains("UDP") {
-                                            ("udp".to_string(), port)
+                                            results.push(PortInfo {
+                                                port,
+                                                protocol: protocol.to_string(),
+                                                pid,
+                                                process_name,
+                                                exe_path,
+                                                user: "system".to_string(), // Windows doesn't show user easily
+                                                source,
+                                                remarks: state.to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run netstat: {}", e);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Use lsof on Unix-like systems (macOS, Linux)
+        let output = Command::new("lsof")
+            .args(&["-i", "-P", "-n"])
+            .output();
+
+        match output {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let lines: Vec<&str> = stdout.lines().collect();
+
+                    // Skip header line
+                    for line in lines.iter().skip(1) {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 9 {
+                            let _command = parts[0];
+                            let pid_str = parts[1];
+                            let user = parts[2];
+
+                            // Parse PID
+                            if let Ok(pid) = pid_str.parse::<u32>() {
+                                // Get process info using sysinfo
+                                let mut system = System::new();
+                                system.refresh_processes(ProcessesToUpdate::All, true);
+
+                                let (process_name, exe_path) = if let Some(process) = system.process(Pid::from(pid as usize)) {
+                                    (process.name().to_string_lossy().to_string(),
+                                     process.exe().map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string()))
+                                } else {
+                                    ("unknown".to_string(), "".to_string())
+                                };
+
+                                // Detect source
+                                let source = detect_source_sync(pid);
+
+                                // Parse connection info from the name field
+                                let name = parts[8..].join(" ");
+                                let (protocol, port_str) = if let Some(port_part) = name.split(':').last() {
+                                    if let Some(port_num) = port_part.split(' ').next() {
+                                        if let Ok(port) = port_num.parse::<u16>() {
+                                            if name.contains("(LISTEN)") {
+                                                ("tcp".to_string(), port)
+                                            } else if name.contains("UDP") {
+                                                ("udp".to_string(), port)
+                                            } else {
+                                                ("tcp".to_string(), port)
+                                            }
                                         } else {
-                                            ("tcp".to_string(), port)
+                                            continue;
                                         }
                                     } else {
                                         continue;
                                     }
                                 } else {
                                     continue;
-                                }
-                            } else {
-                                continue;
-                            };
+                                };
 
-                            results.push(PortInfo {
-                                port: port_str,
-                                protocol,
-                                pid,
-                                process_name,
-                                exe_path,
-                                user: user.to_string(),
-                                source,
-                                remarks: if name.contains("(LISTEN)") { "LISTENING".to_string() } else { "CONNECTED".to_string() },
-                            });
+                                results.push(PortInfo {
+                                    port: port_str,
+                                    protocol,
+                                    pid,
+                                    process_name,
+                                    exe_path,
+                                    user: user.to_string(),
+                                    source,
+                                    remarks: if name.contains("(LISTEN)") { "LISTENING".to_string() } else { "CONNECTED".to_string() },
+                                });
+                            }
                         }
                     }
                 }
             }
-        }
-        Err(e) => {
-            eprintln!("Failed to run lsof: {}", e);
+            Err(e) => {
+                eprintln!("Failed to run lsof: {}", e);
+            }
         }
     }
 
