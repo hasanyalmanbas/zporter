@@ -159,7 +159,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [shadcn/ui](https://ui.shadcn.com/) for the beautiful UI components
 - [Tailwind CSS](https://tailwindcss.com/) for styling
 - [sysinfo](https://crates.io/crates/sysinfo) for system information
-- [Tabler Icons](https://tabler.io/icons) for the icon set
+- [Lucide Icons](https://lucide.dev/) for the icon set
 
 ## 📞 Support
 
