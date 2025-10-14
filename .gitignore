@@ -38,7 +38,7 @@ Cargo.lock
 Thumbs.db
 
 # Screenshots (will be generated)
-screenshots/*.png
+# screenshots/*.png
 screenshots/*.jpg
 screenshots/*.jpeg
 
