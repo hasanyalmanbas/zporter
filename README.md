@@ -15,7 +15,7 @@ A fast, safe, GUI-first utility to identify which process holds a specific port 
 - 🎯 **Source Detection**: Identify Docker containers, systemd services, launchd services, and brew services
 - 🛡️ **Safety First**: Confirmation dialogs and permission handling
 - 🌍 **Cross-Platform**: Works on macOS, Windows, and Linux
-- 🎨 **Modern UI**: Clean, responsive interface built with Mantine
+- 🎨 **Modern UI**: Clean, responsive interface built with shadcn/ui + Tailwind CSS
 
 ## 📸 Screenshots
 
@@ -104,7 +104,7 @@ The application provides a GUI interface. For CLI alternatives, consider using:
 - **Port Scanner**: Uses system tools (`lsof`, `netstat`) to find port usage
 - **Process Manager**: Leverages `sysinfo` crate for process information and termination
 - **Source Detector**: Heuristics-based detection of service sources
-- **UI Framework**: Mantine components with notifications and modals
+- **UI Framework**: shadcn/ui components with Tailwind CSS styling
 
 ## 🤝 Contributing
 
@@ -156,7 +156,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - [Tauri](https://tauri.app/) for the amazing desktop app framework
-- [Mantine](https://mantine.dev/) for the beautiful UI components
+- [shadcn/ui](https://ui.shadcn.com/) for the beautiful UI components
+- [Tailwind CSS](https://tailwindcss.com/) for styling
 - [sysinfo](https://crates.io/crates/sysinfo) for system information
 - [Tabler Icons](https://tabler.io/icons) for the icon set
 
