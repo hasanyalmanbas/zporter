@@ -20,7 +20,6 @@ A fast, safe, GUI-first utility to identify which process holds a specific port 
 ## 📸 Screenshots
 
 ![Main Interface](screenshots/main-interface.png)
-![Process Termination](screenshots/process-kill.png)
 
 ## 🚀 Installation
 
