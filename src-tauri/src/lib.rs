@@ -67,7 +67,7 @@ async fn list_ports(ports: Vec<u16>, only_listening: bool) -> Result<Vec<PortInf
                                                     let source = detect_source_sync(pid);
 
                                                     // Check if listening (TCP LISTENING state)
-                                                    let state = parts.get(3).unwrap_or("");
+                                                    let state = parts.get(3).map_or("", |v| v);
                                                     let is_listening = state.contains("LISTENING");
                                                     let protocol = if local_addr.contains("TCP") { "tcp" } else { "udp" };
 
@@ -291,7 +291,7 @@ async fn list_all_ports() -> Result<Vec<PortInfo>, String> {
                                             let source = detect_source_sync(pid);
 
                                             // Check if listening (TCP LISTENING state)
-                                            let state = parts.get(3).unwrap_or("");
+                                            let state = parts.get(3).map_or("", |v| v);
                                             let protocol = if local_addr.contains("TCP") { "tcp" } else { "udp" };
 
                                             results.push(PortInfo {
