@@ -1,0 +1,11 @@
+Screenshots will be added here:
+
+1. main-interface.png - Main application interface showing search and results
+2. process-kill.png - Process termination confirmation dialog
+3. elevation-prompt.png - Permission elevation prompt (if needed)
+
+To add actual screenshots:
+1. Run the application: npm run tauri:dev
+2. Take screenshots of the interface
+3. Save them in this directory
+4. Update README.md with actual image links
