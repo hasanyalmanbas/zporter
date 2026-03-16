@@ -7,13 +7,14 @@ import { ProcessCard } from '@/components/scanner/process-card'
 import { BatchActionBar } from '@/components/scanner/batch-action-bar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { AlertTriangle } from 'lucide-react'
-import type { PortInfo, Settings } from '@/types'
+import type { PortInfo, Settings, HistoryEntry } from '@/types'
 
 interface ScannerPageProps {
   settings: Settings
+  onAddHistoryEntry: (entry: Omit<HistoryEntry, 'id' | 'timestamp'>) => void
 }
 
-export function ScannerPage({ settings }: ScannerPageProps) {
+export function ScannerPage({ settings, onAddHistoryEntry }: ScannerPageProps) {
   const { portData, loading, scanPorts, scanAllPorts, killProcess } = usePorts()
   const [protocolFilter, setProtocolFilter] = useState<'all' | 'tcp' | 'udp'>('all')
   const [selectedPids, setSelectedPids] = useState<Set<number>>(new Set())
@@ -37,26 +38,37 @@ export function ScannerPage({ settings }: ScannerPageProps) {
     setSelectedPids(prev => prev.size === filtered.length ? new Set() : new Set(filtered.map(p => p.pid)))
   }, [filtered])
 
-  const handleKill = useCallback((pid: number, force: boolean) => {
+  const doKill = useCallback(async (pid: number, force: boolean) => {
     const item = portData.find(p => p.pid === pid)
+    await killProcess(pid, force)
+    onAddHistoryEntry({
+      action: force ? 'force_kill' : 'kill',
+      ports: item ? [item.port] : [],
+      pid,
+      processName: item?.process_name,
+    })
+  }, [portData, killProcess, onAddHistoryEntry])
+
+  const handleKill = useCallback((pid: number, force: boolean) => {
     if (settings.confirmBeforeKill) {
+      const item = portData.find(p => p.pid === pid)
       setConfirmDialog({ pid, force, name: item?.process_name || `PID ${pid}` })
     } else {
-      killProcess(pid, force)
+      doKill(pid, force)
     }
-  }, [portData, settings.confirmBeforeKill, killProcess])
+  }, [portData, settings.confirmBeforeKill, doKill])
 
   const confirmKill = useCallback(async () => {
     if (!confirmDialog) return
-    await killProcess(confirmDialog.pid, confirmDialog.force)
+    await doKill(confirmDialog.pid, confirmDialog.force)
     setConfirmDialog(null)
-  }, [confirmDialog, killProcess])
+  }, [confirmDialog, doKill])
 
   const handleKillSelected = useCallback(() => {
     const force = settings.defaultKillMode === 'force'
-    selectedPids.forEach(pid => killProcess(pid, force))
+    selectedPids.forEach(pid => doKill(pid, force))
     setSelectedPids(new Set())
-  }, [selectedPids, settings.defaultKillMode, killProcess])
+  }, [selectedPids, settings.defaultKillMode, doKill])
 
   return (
     <div className="flex flex-col h-full">

@@ -1,30 +1,53 @@
 import { useState } from 'react'
-import { useFavorites } from '@/hooks/use-favorites'
 import { FavoriteGroup } from '@/components/favorites/favorite-group'
 import { QuickCommand } from '@/components/favorites/quick-command'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { invoke } from '@tauri-apps/api/core'
-import type { QuickCommand as QuickCommandType } from '@/types'
+import type { FavoriteGroup as FavoriteGroupType, FavoritePort, QuickCommand as QuickCommandType, HistoryEntry } from '@/types'
 
-export function FavoritesPage() {
-  const { groups, commands, addGroup, addPort, removePort, removeCommand } = useFavorites()
+interface FavoritesPageProps {
+  groups: FavoriteGroupType[]
+  commands: QuickCommandType[]
+  onAddGroup: (name: string) => void
+  onRemoveGroup: (id: string) => void
+  onAddPort: (groupId: string, port: FavoritePort) => void
+  onRemovePort: (groupId: string, port: number) => void
+  onAddCommand: (cmd: Omit<QuickCommandType, 'id'>) => void
+  onRemoveCommand: (id: string) => void
+  onAddHistoryEntry: (entry: Omit<HistoryEntry, 'id' | 'timestamp'>) => void
+}
+
+export function FavoritesPage({ groups, commands, onAddGroup, onRemovePort, onRemoveCommand, onAddPort, onAddHistoryEntry }: FavoritesPageProps) {
   const [showAddGroup, setShowAddGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [showAddPort, setShowAddPort] = useState<string | null>(null)
   const [newPort, setNewPort] = useState('')
   const [newPortLabel, setNewPortLabel] = useState('')
 
-  const handleScan = async (port: number) => { await invoke('list_ports', { ports: [port], onlyListening: true }) }
-  const handleKill = async (port: number) => { await invoke('kill_by_port', { port, force: false }) }
-  const handleExecuteCommand = async (cmd: QuickCommandType) => {
-    if (cmd.action === 'scan') { await invoke('list_ports', { ports: cmd.ports, onlyListening: true }) }
-    else { for (const port of cmd.ports) { await invoke('kill_by_port', { port, force: false }) } }
+  const handleScan = async (port: number) => {
+    await invoke('list_ports', { ports: [port], onlyListening: true })
+    onAddHistoryEntry({ action: 'scan', ports: [port] })
   }
-  const handleAddGroup = () => { if (newGroupName.trim()) { addGroup(newGroupName.trim()); setNewGroupName(''); setShowAddGroup(false) } }
+  const handleKill = async (port: number) => {
+    await invoke('kill_by_port', { port, force: false })
+    onAddHistoryEntry({ action: 'kill', ports: [port] })
+  }
+  const handleExecuteCommand = async (cmd: QuickCommandType) => {
+    if (cmd.action === 'scan') {
+      await invoke('list_ports', { ports: cmd.ports, onlyListening: true })
+      onAddHistoryEntry({ action: 'scan', ports: cmd.ports })
+    } else {
+      for (const port of cmd.ports) { await invoke('kill_by_port', { port, force: false }) }
+      onAddHistoryEntry({ action: 'kill', ports: cmd.ports })
+    }
+  }
+  const handleAddGroup = () => {
+    if (newGroupName.trim()) { onAddGroup(newGroupName.trim()); setNewGroupName(''); setShowAddGroup(false) }
+  }
   const handleAddPort = () => {
     const portNum = parseInt(newPort)
     if (showAddPort && !isNaN(portNum) && portNum >= 1 && portNum <= 65535) {
-      addPort(showAddPort, { port: portNum, label: newPortLabel || `Port ${portNum}`, groupId: showAddPort })
+      onAddPort(showAddPort, { port: portNum, label: newPortLabel || `Port ${portNum}`, groupId: showAddPort })
       setNewPort(''); setNewPortLabel(''); setShowAddPort(null)
     }
   }
@@ -42,7 +65,7 @@ export function FavoritesPage() {
         )}
         {groups.map(group => (
           <div key={group.id}>
-            <FavoriteGroup group={group} onScan={handleScan} onKill={handleKill} onRemovePort={removePort} />
+            <FavoriteGroup group={group} onScan={handleScan} onKill={handleKill} onRemovePort={onRemovePort} />
             <button onClick={() => setShowAddPort(group.id)} className="text-muted-fg text-[10px] hover:text-fg mb-4">+ Add port to {group.name}</button>
           </div>
         ))}
@@ -50,7 +73,7 @@ export function FavoritesPage() {
           <>
             <div className="text-muted-fg text-[9px] uppercase tracking-wider mb-2 mt-4">Quick Commands</div>
             <div className="space-y-1">
-              {commands.map(cmd => (<QuickCommand key={cmd.id} command={cmd} onExecute={handleExecuteCommand} onRemove={removeCommand} />))}
+              {commands.map(cmd => (<QuickCommand key={cmd.id} command={cmd} onExecute={handleExecuteCommand} onRemove={onRemoveCommand} />))}
             </div>
           </>
         )}

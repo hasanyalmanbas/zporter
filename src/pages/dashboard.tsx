@@ -15,8 +15,8 @@ interface DashboardPageProps {
 }
 
 export function DashboardPage({ historyEntries, quickCommands, watchedPorts, onNavigate, onExecuteCommand }: DashboardPageProps) {
-  const [activePorts, setActivePorts] = useState(0)
-  const [totalProcesses, setTotalProcesses] = useState(0)
+  const [activePorts, setActivePorts] = useState<number | null>(null)
+  const [totalProcesses, setTotalProcesses] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchStats = async () => {

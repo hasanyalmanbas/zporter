@@ -54,3 +54,6 @@ screenshots/*.jpeg
 *.tmp
 *.bak
 .cache
+
+# Superpowers
+.superpowers/

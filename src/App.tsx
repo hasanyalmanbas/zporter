@@ -18,43 +18,57 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const theme = useTheme()
   const { settings, updateSetting } = useSettings()
-  const { entries: historyEntries } = useHistory()
-  const { commands: quickCommands } = useFavorites()
-  const { watchedPorts } = useMonitor(settings.pollingInterval)
+  const history = useHistory()
+  const favorites = useFavorites()
+  const monitor = useMonitor(settings.pollingInterval)
 
   if (settings.theme !== theme.mode) {
     theme.setMode(settings.theme)
   }
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard':
-        return (
-          <DashboardPage
-            historyEntries={historyEntries}
-            quickCommands={quickCommands}
-            watchedPorts={watchedPorts}
-            onNavigate={setCurrentPage}
-            onExecuteCommand={() => {}}
-          />
-        )
-      case 'scanner':
-        return <ScannerPage settings={settings} />
-      case 'monitor':
-        return <MonitorPage settings={settings} />
-      case 'favorites':
-        return <FavoritesPage />
-      case 'history':
-        return <HistoryPage />
-      case 'settings':
-        return <SettingsPage settings={settings} onUpdateSetting={updateSetting} />
-    }
-  }
-
   return (
     <TooltipProvider>
       <AppLayout currentPage={currentPage} onNavigate={setCurrentPage}>
-        {renderPage()}
+        <div className={currentPage === 'dashboard' ? 'h-full' : 'hidden'}>
+          <DashboardPage
+            historyEntries={history.entries}
+            quickCommands={favorites.commands}
+            watchedPorts={monitor.watchedPorts}
+            onNavigate={setCurrentPage}
+            onExecuteCommand={() => {}}
+          />
+        </div>
+        <div className={currentPage === 'scanner' ? 'h-full' : 'hidden'}>
+          <ScannerPage settings={settings} onAddHistoryEntry={history.addEntry} />
+        </div>
+        <div className={currentPage === 'monitor' ? 'h-full' : 'hidden'}>
+          <MonitorPage
+            settings={settings}
+            watchedPorts={monitor.watchedPorts}
+            onAddToWatchlist={monitor.addToWatchlist}
+            onRemoveFromWatchlist={monitor.removeFromWatchlist}
+            onAddHistoryEntry={history.addEntry}
+          />
+        </div>
+        <div className={currentPage === 'favorites' ? 'h-full' : 'hidden'}>
+          <FavoritesPage
+            groups={favorites.groups}
+            commands={favorites.commands}
+            onAddGroup={favorites.addGroup}
+            onRemoveGroup={favorites.removeGroup}
+            onAddPort={favorites.addPort}
+            onRemovePort={favorites.removePort}
+            onAddCommand={favorites.addCommand}
+            onRemoveCommand={favorites.removeCommand}
+            onAddHistoryEntry={history.addEntry}
+          />
+        </div>
+        <div className={currentPage === 'history' ? 'h-full' : 'hidden'}>
+          <HistoryPage entries={history.entries} onClearHistory={history.clearHistory} />
+        </div>
+        <div className={currentPage === 'settings' ? 'h-full' : 'hidden'}>
+          <SettingsPage settings={settings} onUpdateSetting={updateSetting} />
+        </div>
       </AppLayout>
     </TooltipProvider>
   )

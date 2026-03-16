@@ -1,24 +1,35 @@
 import { useState } from 'react'
-import { useMonitor } from '@/hooks/use-monitor'
 import { WatchCard } from '@/components/monitor/watch-card'
 import { PollingIndicator } from '@/components/monitor/polling-indicator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { invoke } from '@tauri-apps/api/core'
-import type { Settings } from '@/types'
+import type { Settings, WatchedPort, HistoryEntry } from '@/types'
 
 interface MonitorPageProps {
   settings: Settings
+  watchedPorts: WatchedPort[]
+  onAddToWatchlist: (port: number) => void
+  onRemoveFromWatchlist: (port: number) => void
+  onAddHistoryEntry: (entry: Omit<HistoryEntry, 'id' | 'timestamp'>) => void
 }
 
-export function MonitorPage({ settings }: MonitorPageProps) {
-  const { watchedPorts, addToWatchlist, removeFromWatchlist } = useMonitor(settings.pollingInterval)
+export function MonitorPage({ settings, watchedPorts, onAddToWatchlist, onRemoveFromWatchlist, onAddHistoryEntry }: MonitorPageProps) {
   const [showAddPort, setShowAddPort] = useState(false)
   const [newPort, setNewPort] = useState('')
 
-  const handleKill = async (pid: number, force: boolean) => { await invoke('kill_process', { pid, force }) }
+  const handleKill = async (pid: number, force: boolean) => {
+    const wp = watchedPorts.find(w => w.portInfo?.pid === pid)
+    await invoke('kill_process', { pid, force })
+    onAddHistoryEntry({
+      action: force ? 'force_kill' : 'kill',
+      ports: wp ? [wp.port] : [],
+      pid,
+      processName: wp?.portInfo?.process_name,
+    })
+  }
   const handleAddPort = () => {
     const port = parseInt(newPort)
-    if (!isNaN(port) && port >= 1 && port <= 65535) { addToWatchlist(port); setNewPort(''); setShowAddPort(false) }
+    if (!isNaN(port) && port >= 1 && port <= 65535) { onAddToWatchlist(port); setNewPort(''); setShowAddPort(false) }
   }
 
   return (
@@ -34,7 +45,7 @@ export function MonitorPage({ settings }: MonitorPageProps) {
         {watchedPorts.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-fg text-xs">No ports being watched. Click "+ Add Port" to start monitoring.</div>
         ) : (
-          watchedPorts.map(wp => (<WatchCard key={wp.port} watched={wp} onKill={handleKill} onUnwatch={removeFromWatchlist} />))
+          watchedPorts.map(wp => (<WatchCard key={wp.port} watched={wp} onKill={handleKill} onUnwatch={onRemoveFromWatchlist} />))
         )}
       </div>
       <Dialog open={showAddPort} onOpenChange={setShowAddPort}>

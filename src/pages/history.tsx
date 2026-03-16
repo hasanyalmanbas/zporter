@@ -1,13 +1,13 @@
 import { useState, useMemo } from 'react'
-import { useHistory } from '@/hooks/use-history'
 import { TimelineEntry } from '@/components/history/timeline-entry'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import type { HistoryEntry } from '@/types'
 
 type HistoryFilter = 'all' | 'kills' | 'scans'
 
-function groupByDay(entries: { timestamp: number; id: string }[]): Map<string, typeof entries> {
-  const groups = new Map<string, typeof entries>()
+function groupByDay(entries: HistoryEntry[]): Map<string, HistoryEntry[]> {
+  const groups = new Map<string, HistoryEntry[]>()
   const today = new Date().toDateString()
   const yesterday = new Date(Date.now() - 86400000).toDateString()
   for (const entry of entries) {
@@ -19,8 +19,12 @@ function groupByDay(entries: { timestamp: number; id: string }[]): Map<string, t
   return groups
 }
 
-export function HistoryPage() {
-  const { entries, clearHistory } = useHistory()
+interface HistoryPageProps {
+  entries: HistoryEntry[]
+  onClearHistory: () => void
+}
+
+export function HistoryPage({ entries, onClearHistory }: HistoryPageProps) {
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [confirmClear, setConfirmClear] = useState(false)
 
@@ -54,7 +58,7 @@ export function HistoryPage() {
             <div key={label} className="mb-4">
               <div className="text-muted-fg text-[9px] uppercase tracking-wider mb-2">{label}</div>
               <div className="border-l border-border">
-                {items.map(entry => <TimelineEntry key={entry.id} entry={entry as any} />)}
+                {items.map(entry => <TimelineEntry key={entry.id} entry={entry} />)}
               </div>
             </div>
           ))
@@ -68,7 +72,7 @@ export function HistoryPage() {
           </DialogHeader>
           <div className="flex gap-2 justify-end mt-4">
             <button onClick={() => setConfirmClear(false)} className="text-muted-fg border border-border px-3 py-1.5 rounded text-xs">Cancel</button>
-            <button onClick={() => { clearHistory(); setConfirmClear(false) }} className="bg-destructive text-white px-3 py-1.5 rounded text-xs">Clear</button>
+            <button onClick={() => { onClearHistory(); setConfirmClear(false) }} className="bg-destructive text-white px-3 py-1.5 rounded text-xs">Clear</button>
           </div>
         </DialogContent>
       </Dialog>
