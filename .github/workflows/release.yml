@@ -29,16 +29,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Sync version from tag
+        shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "Syncing version to $VERSION"
-          # package.json
-          npm version "$VERSION" --no-git-tag-version
-          # Cargo.toml
-          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
-          # tauri.conf.json
-          ESCAPED=$(echo "$VERSION" | sed 's/[&/\]/\\&/g')
-          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$ESCAPED\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
+          node -e "
+            const fs = require('fs');
+            const v = '$VERSION';
+            // package.json
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = v;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            // tauri.conf.json
+            const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            tauri.version = v;
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(tauri, null, 2) + '\n');
+            // Cargo.toml
+            let cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
+            cargo = cargo.replace(/^version = \".*\"/m, 'version = \"' + v + '\"');
+            fs.writeFileSync('src-tauri/Cargo.toml', cargo);
+            console.log('Synced version to ' + v);
+          "
 
       - name: Install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
