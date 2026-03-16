@@ -20,6 +20,14 @@ pub struct KillResult {
     pub message: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ProcessStats {
+    pub pid: u32,
+    pub cpu_percent: f32,
+    pub memory_bytes: u64,
+    pub uptime_secs: u64,
+}
+
 #[tauri::command]
 async fn list_ports(ports: Vec<u16>, only_listening: bool) -> Result<Vec<PortInfo>, String> {
     use std::process::Command;
@@ -239,6 +247,8 @@ fn detect_source_sync(pid: u32) -> String {
             "launchd".to_string()
         } else if exe_path.contains("brew") {
             "brew".to_string()
+        } else if exe_path.contains("node") || process.name().to_string_lossy().contains("node") {
+            "node".to_string()
         } else {
             "unknown".to_string()
         }
@@ -418,11 +428,30 @@ fn detect_source(pid: u32) -> String {
             "launchd".to_string()
         } else if exe_path.contains("brew") {
             "brew".to_string()
+        } else if exe_path.contains("node") || process.name().to_string_lossy().contains("node") {
+            "node".to_string()
         } else {
             "unknown".to_string()
         }
     } else {
         "unknown".to_string()
+    }
+}
+
+#[tauri::command]
+async fn get_process_stats(pid: u32) -> Result<ProcessStats, String> {
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::All, true);
+
+    if let Some(process) = system.process(Pid::from(pid as usize)) {
+        Ok(ProcessStats {
+            pid,
+            cpu_percent: process.cpu_usage(),
+            memory_bytes: process.memory(),
+            uptime_secs: process.run_time(),
+        })
+    } else {
+        Err(format!("Process with PID {} not found", pid))
     }
 }
 
@@ -435,7 +464,8 @@ pub fn run() {
             list_all_ports,
             kill_process,
             kill_by_port,
-            detect_source
+            detect_source,
+            get_process_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
