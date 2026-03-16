@@ -8,6 +8,8 @@
 
 Redesign zPorter from a single-file prototype into a production-ready, multi-page desktop application with a developer tool aesthetic. The current 611-line monolithic App.tsx will be decomposed into a clean component architecture with consistent theming, sidebar navigation, and 5 distinct pages plus supporting panels.
 
+**Backend note:** The Tauri backend will need minor additions to support new features (process resource stats). See "Backend Changes Required" section at the end.
+
 ## Design Decisions
 
 | Decision | Choice | Rationale |
@@ -16,7 +18,8 @@ Redesign zPorter from a single-file prototype into a production-ready, multi-pag
 | Theme | OS system preference + manual toggle | Most professional approach. Uses `prefers-color-scheme` media query with localStorage override. Three options: System, Light, Dark. |
 | Navigation | Wide sidebar (220px) | Always-expanded with icons + labels. Collapses to icon-only at tablet breakpoint, becomes bottom nav on small screens. |
 | Accent color | Amber/Orange (#f59e0b) | Warm, distinctive, high contrast on dark backgrounds. Used for active states, highlights, primary actions. |
-| Approach | Full UI rebuild | Mevcut App.tsx too monolithic to incrementally refactor. Backend (Rust/Tauri) and shadcn/ui components are kept as-is. |
+| Approach | Full UI rebuild | Mevcut App.tsx too monolithic to incrementally refactor. shadcn/ui components kept as-is. Backend gets minor additions for resource stats. |
+| Persistence | localStorage | All client-side state (favorites, history, settings) persisted via localStorage. Simple, no Tauri store plugin needed. |
 
 ## Pages & Components
 
@@ -37,7 +40,7 @@ Persistent left sidebar present on all pages.
 ### 2. Dashboard Page (Default Landing)
 
 Four stat cards in a row:
-- **Active Ports** — count + delta indicator (↑/↓)
+- **Active Ports** — count (delta shows difference from last scan in current session, stored in React state)
 - **Processes** — total running process count
 - **Watching** — monitored port count + status summary
 - **Killed Today** — kill count for current session/day
@@ -47,11 +50,13 @@ Two-column layout below stats:
 - **Recent Activity** — timeline of last 5-10 actions (kills, scans) with colored status dots and relative timestamps.
 
 Full-width section:
-- **Watched Ports** — 3-column grid showing each monitored port's live status (ACTIVE/DOWN), process name, PID, CPU. Left border color indicates status (green=active, red=down). Links to Monitor page.
+- **Watched Ports** — 3-column grid showing each monitored port's live status (ACTIVE/DOWN), process name, PID, CPU%. Left border color indicates status (green=active, red=down). Links to Monitor page.
 
 ### 3. Port Scanner Page (Core Feature)
 
 **Top bar:** Inline search input with `ports:` prefix styling. Scan button (amber) and "All Ports" secondary button. Enter key triggers scan.
+
+**Backend mapping:** "Scan" calls `list_ports(ports, true)`. "All Ports" calls `list_all_ports()`.
 
 **Filter bar:** Single row below search showing:
 - Result count (amber)
@@ -85,13 +90,13 @@ Full-width section:
 **Watched port cards:** Vertically stacked, each card contains:
 - Port number (large), status badge (ACTIVE green / DOWN red), source badge
 - Action buttons: Stop, Kill, Unwatch
-- Stats grid: PID, CPU, Memory, Uptime
+- Stats grid: PID, CPU%, Memory (MB), Uptime (requires new backend command `get_process_stats`)
 - Full command path (truncated)
 - Left border color matches status (green/red)
 
 **Down ports:** Show "last seen" timestamp and last known PID instead of live stats.
 
-**Polling:** Configurable interval (1s/5s/10s/30s) via Settings. Visual indicator in top bar.
+**Polling:** Uses `list_ports` to check if port is still active at configured interval (1s/5s/10s/30s via Settings). Uses `get_process_stats` to fetch resource data for active ports. Visual indicator in top bar.
 
 ### 5. Favorites Page
 
@@ -111,7 +116,7 @@ Full-width section:
 - Each with play button (▶) and description
 - Port list shown on right side
 
-**Data persistence:** Favorites stored in localStorage or Tauri app data directory.
+**Data persistence:** Favorites stored in localStorage.
 
 ### 6. History Page
 
@@ -128,7 +133,7 @@ Full-width section:
 
 **Clear:** Removes all history entries (with confirmation).
 
-**Data persistence:** History stored in localStorage or Tauri app data directory. Auto-cleanup after configurable retention period.
+**Data persistence:** History stored in localStorage. Max 500 entries kept — oldest entries are automatically pruned when limit is exceeded.
 
 ### 7. Process Detail Panel (Slide-over)
 
@@ -140,10 +145,11 @@ Triggered by clicking "⋯" on any process row in Scanner or Monitor.
 
 1. **Header:** Port number (large, amber) + status badge
 2. **Actions row:** Stop, Force Kill, Favorite, Watch — 4 equal-width buttons
-3. **Process Info:** Key-value grid — PID, PPID, User, Protocol, Source, Status
-4. **Resources:** CPU and Memory as progress bars with percentage/value labels. Uptime and thread count as text.
+3. **Process Info:** Key-value grid — PID, User, Protocol, Source, Status
+4. **Resources:** CPU% and Memory (MB) as progress bars with labels. Uptime as text. (Data from `get_process_stats` backend command.)
 5. **Command:** Full command in monospace code block (dark background, word-wrap)
 6. **Executable:** Full executable path in code block
+7. **Remarks:** Shown when `PortInfo.remarks` is non-empty. Displayed as muted text below executable.
 
 **Responsive:** On small screens, panel becomes full-screen overlay instead of side panel.
 
@@ -164,7 +170,7 @@ Accessed from sidebar footer. Three sections:
 - App logo, name, version
 - Description text
 
-**Persistence:** All settings stored in localStorage or Tauri app data directory. Applied immediately on change (no save button needed).
+**Persistence:** All settings stored in localStorage. Applied immediately on change (no save button needed).
 
 ## Theme System
 
@@ -261,7 +267,7 @@ src/
 │   ├── history.tsx                   # History page
 │   └── settings.tsx                  # Settings page
 └── types/
-    └── index.ts                      # Shared TypeScript interfaces
+    └── index.ts                      # Shared TypeScript interfaces (see Types section)
 ```
 
 ## Routing
@@ -278,27 +284,35 @@ The sidebar and bottom nav both call `setCurrentPage`. This avoids adding react-
 ## Data Flow
 
 ### Port Scanning
-1. User enters ports in search bar → `usePorts` hook calls Tauri `invoke('scan_ports', { ports })` → Rust backend returns process list → state update → table renders
+1. User enters ports in search bar → `usePorts` hook calls Tauri `invoke('list_ports', { ports, onlyListening: true })` → Rust backend returns `PortInfo[]` → state update → table renders
+2. "All Ports" button calls `invoke('list_all_ports')` → returns all listening ports
+
+### Process Actions
+1. Kill: `invoke('kill_process', { pid, force })` — returns `Result<KillResult, String>`. `force: true` for force kill, `false` for graceful.
+2. Kill by port: `invoke('kill_by_port', { port, force })` — returns `Result<KillResult, String>`
+3. Source detection: `invoke('detect_source', { pid })` — called per-process as needed
+4. Most Tauri commands return `Result<T, String>` — frontend must handle error case (display error toast/message). Exception: `detect_source` returns `String` directly.
 
 ### Monitor Polling
-1. `useMonitor` hook maintains watchlist in state + persisted storage
-2. `setInterval` calls Tauri `invoke('check_port', { port })` for each watched port at configured interval
-3. Status changes trigger re-render of watch cards
-4. DOWN detection: if a previously ACTIVE port returns no process, mark as DOWN with "last seen" timestamp
+1. `useMonitor` hook maintains watchlist in state + localStorage
+2. `setInterval` calls `invoke('list_ports', { ports: allWatchedPorts, onlyListening: true })` with all watched ports batched in a single call at configured interval
+3. For active ports, also calls `invoke('get_process_stats', { pid })` to get CPU/memory/uptime (new backend command)
+4. Status changes trigger re-render of watch cards
+5. DOWN detection: if a previously ACTIVE port returns empty results, mark as DOWN with "last seen" timestamp
 
 ### Favorites
-1. `useFavorites` hook manages groups and ports in localStorage/Tauri store
+1. `useFavorites` hook manages groups and ports in localStorage
 2. CRUD operations: add/remove/rename ports, create/delete groups, add/remove quick commands
-3. Live status: favorites page calls port check on mount to show current status
+3. Live status: favorites page calls `list_ports` on mount to show current status
 
 ### History
 1. `useHistory` hook logs every scan and kill action with timestamp
-2. Stored in localStorage/Tauri store as array of events
+2. Stored in localStorage as array of events (max 500, auto-pruned)
 3. Grouped by day for display
 4. Clear function removes all entries
 
 ### Settings
-1. `useSettings` hook reads/writes to localStorage/Tauri store
+1. `useSettings` hook reads/writes to localStorage
 2. Theme changes apply immediately via document class toggle
 3. All components read settings via hook (no prop drilling)
 
@@ -310,12 +324,113 @@ The sidebar and bottom nav both call `setCurrentPage`. This avoids adding react-
 | 640-1023px (Tablet) | 44px icon-only | Compact table (fewer columns) | Side panel 280px | 2 columns |
 | <640px (Small) | Bottom nav | Card layout | Full-screen overlay | 2 columns, stacked |
 
+## Types
+
+Key shared interfaces in `src/types/index.ts`:
+
+```typescript
+// From Tauri backend (matches Rust PortInfo struct)
+interface PortInfo {
+  port: number
+  protocol: string
+  pid: number
+  process_name: string
+  exe_path: string
+  user: string
+  source: string      // "docker" | "systemd" | "launchd" | "brew" | "node" | "unknown"
+  remarks: string
+}
+
+// New: from get_process_stats backend command
+interface ProcessStats {
+  pid: number
+  cpu_percent: number
+  memory_bytes: number
+  uptime_secs: number
+}
+
+// Frontend-only types
+type Page = 'dashboard' | 'scanner' | 'monitor' | 'favorites' | 'history' | 'settings'
+
+interface FavoritePort {
+  port: number
+  label: string          // user-defined name e.g. "Frontend Dev"
+  groupId: string
+}
+
+interface FavoriteGroup {
+  id: string
+  name: string           // e.g. "Dev Stack"
+  ports: FavoritePort[]
+}
+
+interface QuickCommand {
+  id: string
+  label: string          // e.g. "Kill all dev ports"
+  action: 'kill' | 'scan'
+  ports: number[]
+}
+
+interface HistoryEntry {
+  id: string
+  action: 'kill' | 'force_kill' | 'scan' | 'scan_all'
+  ports: number[]
+  pid?: number
+  processName?: string
+  timestamp: number      // Unix ms
+}
+
+type ThemeMode = 'system' | 'light' | 'dark'
+type KillMode = 'graceful' | 'force'
+
+interface Settings {
+  theme: ThemeMode
+  compactMode: boolean
+  confirmBeforeKill: boolean
+  defaultKillMode: KillMode
+  pollingInterval: 1 | 5 | 10 | 30  // seconds
+}
+
+interface WatchedPort {
+  port: number
+  status: 'active' | 'down'
+  lastSeen?: number      // Unix ms, set when port goes down
+  lastPid?: number
+  stats?: ProcessStats   // live stats when active
+  portInfo?: PortInfo    // last known port info
+}
+```
+
+## Backend Changes Required
+
+The existing Tauri backend needs one new command to support resource monitoring:
+
+**New command: `get_process_stats(pid: u32) -> Result<ProcessStats, String>`**
+- Uses the existing `sysinfo` crate (already a dependency) to fetch CPU%, memory, and start time for a given PID
+- Returns `ProcessStats { pid, cpu_percent, memory_bytes, uptime_secs }`
+- Returns error if PID not found
+- Called by Monitor page and Process Detail Panel for live stats
+
+**Backend enhancement: Add "node" detection to `detect_source`**
+- Current `detect_source_sync` checks for docker, systemd, launchd, brew — but not node
+- Add heuristic: if process name is "node" or exe_path contains "node", return "node"
+- This is a minor addition to the existing function, not a new command
+
+**Existing commands used (signatures unchanged):**
+- `list_ports(ports: Vec<u16>, only_listening: bool) -> Result<Vec<PortInfo>, String>`
+- `list_all_ports() -> Result<Vec<PortInfo>, String>`
+- `kill_process(pid: u32, force: bool) -> Result<KillResult, String>`
+- `kill_by_port(port: u16, force: bool) -> Result<KillResult, String>`
+- `detect_source(pid: u32) -> String`
+
+**Note:** The `PortInfo.remarks` field from the backend will be displayed in the Process Detail Panel under a "Remarks" section when non-empty.
+
 ## What's NOT Changing
 
-- **Tauri backend (Rust):** All `src-tauri/` code stays as-is. Same invoke commands, same process scanning logic.
 - **shadcn/ui components:** All `src/components/ui/` files stay as-is. We use them as building blocks.
 - **Build tooling:** Vite + TypeScript + Tailwind CSS + Tauri CLI — all unchanged.
 - **Dependencies:** No new npm packages needed. Everything builds on existing shadcn/ui + Radix + Lucide stack.
+- **Existing Tauri commands:** All current backend command signatures unchanged. One new command added. Minor enhancement to `detect_source` for node detection.
 
 ## What IS Changing
 
@@ -324,3 +439,4 @@ The sidebar and bottom nav both call `setCurrentPage`. This avoids adding react-
 - **New files:** ~35 new component/hook/page files (see architecture above)
 - **Deleted files:** App.css (Vite template CSS, unused styles)
 - **Theme:** Consistent dark/light with OS detection + manual override + persistence
+- **Backend:** One new Tauri command (`get_process_stats`) for resource monitoring + "node" detection in `detect_source`
