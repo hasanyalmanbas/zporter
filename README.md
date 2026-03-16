@@ -186,7 +186,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Tailwind CSS](https://tailwindcss.com/) for styling
 - [sysinfo](https://crates.io/crates/sysinfo) for system information
 - [Lucide Icons](https://lucide.dev/) for the icon set
-- [Claude](https://claude.ai/) (Anthropic) + [Superpowers](https://github.com/nicekid1/superpowers) plugin for AI-assisted development
+- [Claude](https://claude.ai/) (Anthropic) + [Superpowers](https://github.com/obra/superpowers) plugin for AI-assisted development
 
 ## Support
 
@@ -195,4 +195,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-Made with Tauri, React, and [Claude Code](https://claude.ai/claude-code) + [Superpowers](https://github.com/nicekid1/superpowers)
+Made with Tauri, React, and [Claude Code](https://claude.ai/claude-code) + [Superpowers](https://github.com/obra/superpowers)
