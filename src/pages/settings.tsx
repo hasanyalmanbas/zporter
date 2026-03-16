@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react'
+import { getVersion } from '@tauri-apps/api/app'
 import { AppearanceSection } from '@/components/settings/appearance-section'
 import { BehaviorSection } from '@/components/settings/behavior-section'
 import type { Settings, ThemeMode, KillMode } from '@/types'
@@ -8,6 +10,12 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ settings, onUpdateSetting }: SettingsPageProps) {
+  const [version, setVersion] = useState<string>('')
+
+  useEffect(() => {
+    getVersion().then(setVersion)
+  }, [])
+
   return (
     <div className="flex flex-col h-full overflow-y-auto p-4">
       <div className="text-fg text-sm font-semibold mb-4">Settings</div>
@@ -28,7 +36,7 @@ export function SettingsPage({ settings, onUpdateSetting }: SettingsPageProps) {
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center font-bold text-accent-fg text-sm">Z</div>
             <div>
-              <div className="text-fg text-xs font-semibold">zPorter <span className="text-muted-fg font-normal">v1.0.0</span></div>
+              <div className="text-fg text-xs font-semibold">zPorter <span className="text-muted-fg font-normal">{version ? `v${version}` : '...'}</span></div>
               <div className="text-muted-fg text-[10px]">Cross-platform port & process manager</div>
             </div>
           </div>
